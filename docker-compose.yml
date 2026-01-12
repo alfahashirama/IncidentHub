@@ -1,0 +1,75 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: incidenthub_postgres
+    environment:
+      POSTGRES_DB: incidenthub_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - incidenthub
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      target: development
+    container_name: incidenthub_backend
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: incidenthub_dev
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: votre_super_secret_jwt_changez_moi_en_production_12345
+      JWT_EXPIRE: 7d
+      FRONTEND_URL: http://localhost:5173
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - incidenthub
+    command: npm run dev
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    container_name: incidenthub_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:5000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - incidenthub
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  postgres_data:
+
+networks:
+  incidenthub:
+    driver: bridge
