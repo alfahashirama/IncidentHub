@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: incidenthub
+data:
+  VITE_API_URL: "http://localhost:5000/api"

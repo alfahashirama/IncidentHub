@@ -1,56 +1,48 @@
-# ==================== STAGE 1: Dependencies ====================
-FROM node:18-alpine AS dependencies
+# ==================== STAGE 1: Base ====================
+FROM node:20-alpine AS base
 
 WORKDIR /app
 
 # Copie les fichiers de dépendances
 COPY package*.json ./
 
-# Installe les dépendances
-RUN npm ci
+# ==================== STAGE 2: Development ====================
+FROM base AS development
 
-# ==================== STAGE 2: Builder ====================
-FROM node:18-alpine AS builder
+# Installe toutes les dépendances
+RUN npm install
 
-WORKDIR /app
-
-# Copie les dépendances
-COPY --from=dependencies /app/node_modules ./node_modules
-
-# Copie le code source
-COPY . .
-
-# Build l'application pour la production
-# Les variables d'environnement sont injectées au build time
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
-
-RUN npm run build
-
-# ==================== STAGE 3: Development ====================
-FROM node:18-alpine AS development
-
-WORKDIR /app
-
-# Copie les dépendances
-COPY --from=dependencies /app/node_modules ./node_modules
-
-# Copie le code source
+# Copie tout le code
 COPY . .
 
 # Expose le port Vite
 EXPOSE 5173
 
 # Commande de développement
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev"]
+
+# ==================== STAGE 3: Builder ====================
+FROM base AS builder
+
+# Installe les dépendances
+RUN npm install
+
+# Copie le code source
+COPY . .
+
+# Build pour la production
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
+RUN npm run build
 
 # ==================== STAGE 4: Production ====================
 FROM nginx:alpine AS production
 
-# Copie la configuration Nginx personnalisée
+# Copie la configuration Nginx
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copie les fichiers buildés depuis le stage builder
+# Copie les fichiers buildés
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Expose le port
@@ -58,7 +50,7 @@ EXPOSE 80
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
 
 # Démarre Nginx
 CMD ["nginx", "-g", "daemon off;"]
