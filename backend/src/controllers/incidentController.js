@@ -1,5 +1,6 @@
 const { Incident, User } = require('../models');
 const { Op } = require('sequelize');
+const { incidentsCreated } = require('../utils/metrics');
 
 /**
  * @route   GET /api/incidents
@@ -170,6 +171,8 @@ const createIncident = async (req, res) => {
         incident: incidentWithRelations
       }
     });
+    incidentsCreated.inc();
+
   } catch (error) {
     console.error('Create incident error:', error);
     

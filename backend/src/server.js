@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { sequelize, testConnection } = require('./config/database');
+const { register } = require('./utils/metrics');
+const metricsMiddleware = require('./middleware/metrics');
 
 // Initialisation de l'application Express
 const app = express();
@@ -20,6 +22,21 @@ app.use(express.json());
 
 // Parser les données URL-encoded (formulaires)
 app.use(express.urlencoded({ extended: true }));
+
+app.use(metricsMiddleware);
+
+
+// Route pour exposer les métriques Prometheus
+// Route métriques Prometheus
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    const metrics = await register.metrics();
+    res.send(metrics);
+  } catch (err) {
+    res.status(500).send(err);
+  }
+});
 
 // Log des requêtes (pour debug)
 app.use((req, res, next) => {

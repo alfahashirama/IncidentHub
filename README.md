@@ -24,3 +24,9 @@ incidenthub/
 
 ## 👨‍💻 Auteur
 Projet d'apprentissage DevOps complet
+
+# 🏥 IncidentHub
+
+![CI/CD](https://github.com/alfahashirama/IncidentHub/actions/workflows/ci-cd.yml/badge.svg)
+
+Plateforme de gestion d'incidents IT

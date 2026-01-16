@@ -1,5 +1,6 @@
 const { User } = require('../models');
 const { generateToken } = require('../utils/jwt');
+const { usersRegistered } = require('../utils/metrics');
 
 /**
  * @route   POST /api/auth/register
@@ -47,6 +48,9 @@ const register = async (req, res) => {
         token
       }
     });
+    
+    usersRegistered.inc();
+
   } catch (error) {
     console.error('Register error:', error);
     
