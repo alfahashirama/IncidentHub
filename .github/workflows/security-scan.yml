@@ -1,0 +1,86 @@
+name: Security Scan
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Scan quotidien à 2h du matin
+    - cron: '0 2 * * *'
+
+jobs:
+  # ==================== SCAN IMAGES DOCKER ====================
+  trivy-scan:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build les images localement (sans push)
+      - name: Build Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: false
+          tags: incidenthub-backend:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          tags: incidenthub-frontend:scan
+          build-args: |
+            VITE_API_URL=http://localhost:5000/api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Scan Backend
+      - name: Run Trivy scan on Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: incidenthub-backend:scan
+          format: 'sarif'
+          output: 'trivy-backend-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      # Scan Frontend
+      - name: Run Trivy scan on Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: incidenthub-frontend:scan
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      # Upload les résultats vers GitHub Security
+      - name: Upload Backend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-backend-results.sarif'
+          category: 'backend'
+
+      - name: Upload Frontend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-frontend-results.sarif'
+          category: 'frontend'
+
+      # Fail si vulnérabilités critiques
+      - name: Check for CRITICAL vulnerabilities
+        run: |
+          echo "Checking for CRITICAL vulnerabilities..."
+          trivy image --severity CRITICAL --exit-code 1 incidenthub-backend:scan
+          trivy image --severity CRITICAL --exit-code 1 incidenthub-frontend:scan
