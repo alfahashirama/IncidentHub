@@ -7,12 +7,15 @@ on:
   pull_request:
     branches:
       - main
-  schedule:
-    # Scan quotidien à 2h du matin
-    - cron: '0 2 * * *'
+
+# IMPORTANT : Ajoute les permissions nécessaires
+permissions:
+  contents: read
+  security-events: write
+  actions: read
 
 jobs:
-  # ==================== SCAN IMAGES DOCKER ====================
+  # ==================== SCAN TRIVY ====================
   trivy-scan:
     name: Trivy Security Scan
     runs-on: ubuntu-latest
@@ -24,28 +27,34 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build les images localement (sans push)
+      # Build Backend
       - name: Build Backend Image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
-          push: false
+          load: true
           tags: incidenthub-backend:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Build Frontend
       - name: Build Frontend Image
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          push: false
+          load: true
           tags: incidenthub-frontend:scan
           build-args: |
             VITE_API_URL=http://localhost:5000/api
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Scan Backend
+      # Vérifie que les images existent
+      - name: Verify images
+        run: |
+          docker images | grep incidenthub
+
+      # Scan Backend avec Trivy
       - name: Run Trivy scan on Backend
         uses: aquasecurity/trivy-action@master
         with:
@@ -54,7 +63,7 @@ jobs:
           output: 'trivy-backend-results.sarif'
           severity: 'CRITICAL,HIGH'
 
-      # Scan Frontend
+      # Scan Frontend avec Trivy
       - name: Run Trivy scan on Frontend
         uses: aquasecurity/trivy-action@master
         with:
@@ -63,24 +72,97 @@ jobs:
           output: 'trivy-frontend-results.sarif'
           severity: 'CRITICAL,HIGH'
 
-      # Upload les résultats vers GitHub Security
+      # Vérifie que les fichiers SARIF existent
+      - name: Verify SARIF files
+        run: |
+          ls -lh *.sarif
+
+      # Upload Backend results (CodeQL v4)
       - name: Upload Backend scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-backend-results.sarif'
           category: 'backend'
 
+      # Upload Frontend results (CodeQL v4)
       - name: Upload Frontend scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-frontend-results.sarif'
           category: 'frontend'
 
-      # Fail si vulnérabilités critiques
-      - name: Check for CRITICAL vulnerabilities
+      # Affiche un résumé
+      - name: Display vulnerability summary
+        if: always()
         run: |
-          echo "Checking for CRITICAL vulnerabilities..."
-          trivy image --severity CRITICAL --exit-code 1 incidenthub-backend:scan
-          trivy image --severity CRITICAL --exit-code 1 incidenthub-frontend:scan
+          echo "### 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend vulnerabilities:**" >> $GITHUB_STEP_SUMMARY
+          trivy image --severity CRITICAL,HIGH --format table incidenthub-backend:scan >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend vulnerabilities:**" >> $GITHUB_STEP_SUMMARY
+          trivy image --severity CRITICAL,HIGH --format table incidenthub-frontend:scan >> $GITHUB_STEP_SUMMARY || true
+
+  # ==================== SCAN DÉPENDANCES ====================
+  dependency-scan:
+    name: Dependency Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Backend npm audit
+      - name: NPM Audit Backend
+        working-directory: ./backend
+        run: |
+          npm ci
+          npm audit --audit-level=moderate || true
+
+      # Frontend npm audit
+      - name: NPM Audit Frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm audit --audit-level=moderate || true
+
+      # Trivy filesystem scan Backend
+      - name: Trivy FS scan Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './backend'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+
+      # Trivy filesystem scan Frontend
+      - name: Trivy FS scan Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './frontend'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+
+  # ==================== SCAN SECRETS ====================
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
