@@ -12,7 +12,7 @@ env:
   DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
   BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/incidenthub-backend
   FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/incidenthub-frontend
-  VITE_API_URL: http://incidenthub.local/api  # ✅ Correction : URL correcte pour Kubernetes
+  VITE_API_URL: http://incidenthub.local/api 
 
 jobs:
   # ==================== JOB 1: BUILD & TEST ====================
@@ -50,7 +50,7 @@ jobs:
       - name: Build frontend
         working-directory: ./frontend
         env:
-          VITE_API_URL: ${{ env.VITE_API_URL }}  # ✅ Utilise la variable globale
+          VITE_API_URL: ${{ env.VITE_API_URL }}  
         run: npm run build
 
       - name: Lint frontend
@@ -103,7 +103,7 @@ jobs:
           context: ./frontend
           push: true
           build-args: |
-            VITE_API_URL=${{ env.VITE_API_URL }}  # ✅ Correction : utilise la variable globale
+            VITE_API_URL=${{ env.VITE_API_URL }} 
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.sha_short }}
